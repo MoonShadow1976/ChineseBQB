@@ -1,0 +1,59 @@
+name: Update BQB JSON index
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - '**' # 监听所有文件变化，但下面会通过脚本过滤
+      - '!.github/**' # 排除.github目录本身的变化，避免循环触发
+
+jobs:
+  update-json:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 允许工作流写入仓库
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # 获取所有历史记录，以便检测变化
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        # 如果有需要可以安装额外依赖
+        pip install --upgrade pip
+
+    - name: Run JSON generator script
+      env:
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REF_NAME: ${{ github.ref_name }}
+        GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+      run: |
+        python .github/scripts/generate_bqb_json.py
+
+    - name: Check for changes
+      id: check-changes
+      run: |
+        # 检查是否有文件变化
+        if git diff --quiet --exit-code; then
+          echo "changes=false" >> $GITHUB_OUTPUT
+          echo "没有检测到变化"
+        else
+          echo "changes=true" >> $GITHUB_OUTPUT
+          echo "检测到变化，准备提交"
+        fi
+
+    - name: Commit and push if changed
+      if: steps.check-changes.outputs.changes == 'true'
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add bqb.json
+        git commit -m "自动更新BQB JSON索引 [skip ci]"
+        git push
